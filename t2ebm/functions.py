@@ -101,6 +101,7 @@ def describe_ebm(
     llm: Union[AbstractChatModel, str],
     ebm: Union[ExplainableBoostingClassifier, ExplainableBoostingRegressor],
     num_sentences: int = 30,
+    max_features: int = 5,  # Limit the number of features to analyze for performance
     **kwargs,
 ):
     """Ask the LLM to describe an EBM. 
@@ -111,6 +112,7 @@ def describe_ebm(
         llm (Union[AbstractChatModel, str]): The LLM.
         ebm (Union[ExplainableBoostingClassifier, ExplainableBoostingRegressor]): The EBM.
         num_sentences (int, optional): The desired number of senteces for the description. Defaults to 30.
+        max_features (int, optional): Maximum number of features to analyze. Defaults to 5 for performance.
 
     Returns:
         str: The description of the EBM.
@@ -119,15 +121,27 @@ def describe_ebm(
     # llm setup
     llm = t2ebm.llm.setup(llm)
 
-    # Note: We convert all objects to text before we prompt the LLM the first time.
-    # The idea is that if there is an error processing one of the graphs, we get it before we prompt the LLM.
+    # Get feature importances to prioritize the most important features
     feature_importances = feature_importances_to_text(ebm)
+    
+    # Calculate feature importance scores
+    importance_scores = ebm.term_importances()
+    feature_indices = list(range(len(ebm.feature_names_in_)))
+    
+    # Sort features by absolute importance (most impactful first)
+    sorted_indices = sorted(feature_indices, key=lambda i: abs(importance_scores[i]), reverse=True)
+    
+    # Take only the top N features for analysis (performance optimization)
+    top_feature_indices = sorted_indices[:max_features]
+    
+    print(f"Analyzing top {len(top_feature_indices)} features out of {len(feature_indices)} total features")
 
-    # extract the graphs from the EBM
+    # Extract and process only the top features
     extract_kwargs = list(inspect.signature(extract_graph).parameters)
     extract_dict = {k: kwargs[k] for k in dict(kwargs) if k in extract_kwargs}
+    
     graphs = []
-    for feature_index in range(len(ebm.feature_names_in_)):
+    for feature_index in top_feature_indices:
         graphs.append(extract_graph(ebm, feature_index, **extract_dict))
 
     # convert the graphs to text
@@ -146,24 +160,25 @@ def describe_ebm(
         if k in llm_descripe_kwargs and k != "num_sentences"
     }
     messages = [
-        prompts.describe_graph_cot(graph, num_sentences=7, **llm_descripe_dict)
+        prompts.describe_graph_cot(graph, num_sentences=5, **llm_descripe_dict)  # Reduced from 7 to 5
         for graph in graphs
     ]
 
-    # execute the prompts
-    graph_descriptions = [
-        t2ebm.llm.chat_completion(llm, msg)[-1]["content"] for msg in messages
-    ]
+    # execute the prompts with progress indication
+    graph_descriptions = []
+    for i, msg in enumerate(messages):
+        print(f"Processing feature {i+1}/{len(messages)}: {ebm.feature_names_in_[top_feature_indices[i]]}")
+        graph_descriptions.append(t2ebm.llm.chat_completion(llm, msg)[-1]["content"])
 
     # combine the graph descriptions in a single string
     graph_descriptions = "\n\n".join(
         [
-            ebm.feature_names_in_[idx] + ": " + graph_description
+            ebm.feature_names_in_[top_feature_indices[idx]] + ": " + graph_description
             for idx, graph_description in enumerate(graph_descriptions)
         ]
     )
 
-    # print(graph_descriptions)
+    print("Generating final summary...")
 
     # now, ask the llm to summarize the different descriptions
     llm_summarize_kwargs = list(inspect.signature(prompts.summarize_ebm).parameters)
