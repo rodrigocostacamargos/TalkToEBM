@@ -57,15 +57,20 @@
                     <div class="card-header">
                         <h5 class="card-title mb-0">📊 Features Disponíveis</h5>
                     </div>
-                    <div class="card-body">
+                    <div class="card-body" style="max-height: 500px; overflow-y: auto;">
                         <div id="features-list">
-                            {% for feature in feature_names %}
-                            <div class="card feature-card mb-2" onclick="describeFeature({{ loop.index0 }})">
+                            {% for feat in features_with_desc %}
+                            <div class="card feature-card mb-2" onclick="describeFeature({{ loop.index0 }})" 
+                                 data-bs-toggle="tooltip" data-bs-placement="right" 
+                                 title="{{ feat.description }}">
                                 <div class="card-body py-2">
                                     <small class="text-muted">#{{ loop.index0 }}</small>
-                                    <h6 class="card-title mb-1">{{ feature }}</h6>
-                                    <span class="badge bg-secondary">
-                                        {% if 'Curso' in feature or 'Semestre' in feature %}
+                                    <h6 class="card-title mb-1">{{ feat.name }}</h6>
+                                    <small class="text-muted d-block" style="font-size: 0.75rem; line-height: 1.2;">
+                                        {{ feat.description[:80] }}{% if feat.description|length > 80 %}...{% endif %}
+                                    </small>
+                                    <span class="badge bg-secondary mt-1">
+                                        {% if 'Curso' in feat.name or 'Semestre' in feat.name %}
                                             Categórica
                                         {% else %}
                                             Numérica
@@ -184,6 +189,75 @@
                                         onclick="setPrompt('Identifique possíveis vieses ou limitações nesta análise.')">
                                     🔍 Análise Crítica
                                 </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Visualizações do Modelo -->
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">📊 Visualizações do Modelo</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row mb-3">
+                            <div class="col-12">
+                                <button class="btn btn-success w-100 mb-2" onclick="showGlobalVisualization()">
+                                    🌐 Visualização Global do Modelo
+                                </button>
+                                <small class="text-muted">Mostra o modelo EBM completo com todas as features</small>
+                            </div>
+                        </div>
+
+                        <div class="row mb-3">
+                            <div class="col-12">
+                                <h6>📈 Visualização por Feature</h6>
+                                <div class="input-group mb-2">
+                                    <select class="form-select" id="feature-select" onchange="updateFeatureDescription()">
+                                        {% for feat in features_with_desc %}
+                                        <option value="{{ feat.name }}" data-description="{{ feat.description }}">{{ feat.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <button class="btn btn-primary" onclick="showFeatureVisualization()">
+                                        Visualizar
+                                    </button>
+                                </div>
+                                <small id="feature-description" class="text-muted d-block">
+                                    {% if features_with_desc %}
+                                    {{ features_with_desc[0].description }}
+                                    {% else %}
+                                    Selecione uma feature para visualizar seu gráfico de contribuição
+                                    {% endif %}
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-12">
+                                <h6>👤 Explicações Locais</h6>
+                                <div class="btn-group w-100" role="group">
+                                    <button type="button" class="btn btn-outline-primary" onclick="showLocalVisualization(0)">Amostra 1</button>
+                                    <button type="button" class="btn btn-outline-primary" onclick="showLocalVisualization(1)">Amostra 2</button>
+                                    <button type="button" class="btn btn-outline-primary" onclick="showLocalVisualization(2)">Amostra 3</button>
+                                    <button type="button" class="btn btn-outline-primary" onclick="showLocalVisualization(3)">Amostra 4</button>
+                                    <button type="button" class="btn btn-outline-primary" onclick="showLocalVisualization(4)">Amostra 5</button>
+                                </div>
+                                <small class="text-muted">Explicações individuais para as primeiras 5 amostras de teste</small>
+                            </div>
+                        </div>
+
+                        <!-- Área de Visualização -->
+                        <div id="visualization-area" class="mt-3" style="display: none;">
+                            <div class="card">
+                                <div class="card-header d-flex justify-content-between align-items-center">
+                                    <h6 class="card-title mb-0">Visualização</h6>
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="hideVisualization()">
+                                        ✕ Fechar
+                                    </button>
+                                </div>
+                                <div class="card-body p-0">
+                                    <iframe id="visualization-frame" style="width: 100%; height: 600px; border: none;"></iframe>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -327,8 +401,67 @@
             });
         }
 
+        // Funções para visualizações
+        function showGlobalVisualization() {
+            const visualizationArea = document.getElementById('visualization-area');
+            const visualizationFrame = document.getElementById('visualization-frame');
+            
+            visualizationFrame.src = '/api/visualize_global';
+            visualizationArea.style.display = 'block';
+            
+            // Scroll para a visualização
+            visualizationArea.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function showFeatureVisualization() {
+            const featureSelect = document.getElementById('feature-select');
+            const featureName = featureSelect.value;
+            const visualizationArea = document.getElementById('visualization-area');
+            const visualizationFrame = document.getElementById('visualization-frame');
+            
+            // Usar encodeURIComponent para lidar com caracteres especiais no nome da feature
+            visualizationFrame.src = `/api/visualize_feature_by_name/${encodeURIComponent(featureName)}`;
+            visualizationArea.style.display = 'block';
+            
+            // Scroll para a visualização
+            visualizationArea.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function showLocalVisualization(sampleIndex) {
+            const visualizationArea = document.getElementById('visualization-area');
+            const visualizationFrame = document.getElementById('visualization-frame');
+            
+            visualizationFrame.src = `/api/visualize_local/${sampleIndex}`;
+            visualizationArea.style.display = 'block';
+            
+            // Scroll para a visualização
+            visualizationArea.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function hideVisualization() {
+            const visualizationArea = document.getElementById('visualization-area');
+            const visualizationFrame = document.getElementById('visualization-frame');
+            
+            visualizationArea.style.display = 'none';
+            visualizationFrame.src = '';
+        }
+
+        // Função para atualizar a descrição da feature selecionada no dropdown
+        function updateFeatureDescription() {
+            const featureSelect = document.getElementById('feature-select');
+            const selectedOption = featureSelect.options[featureSelect.selectedIndex];
+            const description = selectedOption.getAttribute('data-description');
+            document.getElementById('feature-description').textContent = description || 'Selecione uma feature';
+        }
+
         // Inicialização
         document.addEventListener('DOMContentLoaded', function() {
+            // Inicializar tooltips do Bootstrap
+            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl);
+            });
+
             // Verificar status da API
             fetch('/api/health')
                 .then(response => response.json())
