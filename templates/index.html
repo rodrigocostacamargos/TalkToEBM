@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TalkToEBM - Análise de Evasão UPE</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .feature-card {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .feature-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .loading {
+            display: none;
+        }
+        .result-area {
+            min-height: 200px;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+        }
+        .custom-prompt {
+            background-color: #f8f9fa;
+            border-left: 4px solid #0d6efd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid py-4">
+        <!-- Cabeçalho -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h1 class="display-4 text-center">🎓 TalkToEBM - Análise de Evasão UPE</h1>
+                <p class="lead text-center">Interface web para análise de modelos EBM com linguagem natural</p>
+                
+                <div class="alert alert-info" role="alert">
+                    <strong>Status:</strong> 
+                    <span id="status-indicator">
+                        {% if model_loaded %}
+                            <span class="badge bg-success">Modelo Carregado</span> 
+                            {{ feature_names|length }} features disponíveis
+                        {% else %}
+                            <span class="badge bg-danger">Modelo Não Carregado</span>
+                        {% endif %}
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- Painel de Features -->
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">📊 Features Disponíveis</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="features-list">
+                            {% for feature in feature_names %}
+                            <div class="card feature-card mb-2" onclick="describeFeature({{ loop.index0 }})">
+                                <div class="card-body py-2">
+                                    <small class="text-muted">#{{ loop.index0 }}</small>
+                                    <h6 class="card-title mb-1">{{ feature }}</h6>
+                                    <span class="badge bg-secondary">
+                                        {% if 'Curso' in feature or 'Semestre' in feature %}
+                                            Categórica
+                                        {% else %}
+                                            Numérica
+                                        {% endif %}
+                                    </span>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Prompt Customizado -->
+                <div class="card mt-3 custom-prompt">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">💬 Prompt Customizado</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="custom-prompt" class="form-label">Instrução Personalizada:</label>
+                            <textarea class="form-control" id="custom-prompt" rows="3" 
+                                      placeholder="Ex: Explique os padrões mais surpreendentes neste gráfico..."></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label for="model-select" class="form-label">Modelo LLM:</label>
+                            <select class="form-select" id="model-select">
+                                <option value="deepseek-chat">DeepSeek Chat</option>
+                                <option value="gpt-3.5-turbo">OpenAI GPT-3.5 Turbo</option>
+                                <option value="gpt-4">OpenAI GPT-4</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="language-select" class="form-label">Idioma:</label>
+                            <select class="form-select" id="language-select">
+                                <option value="Portuguese (Brazil)">Português (Brasil)</option>
+                                <option value="English">English</option>
+                                <option value="Spanish">Español</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary w-100 mb-2" onclick="describeModel()">
+                            📈 Analisar Modelo Completo
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Área de Resultados -->
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">📝 Resultados da Análise</h5>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="copyToClipboard(event)">
+                            📋 Copiar
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <!-- Loading -->
+                        <div id="loading" class="loading text-center py-4">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Carregando...</span>
+                            </div>
+                            <p class="mt-2">Processando sua solicitação com o LLM...</p>
+                        </div>
+
+                        <!-- Resultado -->
+                        <div id="result-area" class="result-area p-3 border rounded">
+                            <div class="text-muted text-center py-5">
+                                <p>Selecione uma feature ou use um prompt customizado para começar a análise.</p>
+                                <small>O LLM irá descrever os padrões encontrados no modelo EBM.</small>
+                            </div>
+                        </div>
+
+                        <!-- Informações do Resultado -->
+                        <div id="result-info" class="mt-3" style="display: none;">
+                            <div class="alert alert-light border" role="alert">
+                                <small>
+                                    <strong>Feature analisada:</strong> <span id="feature-name">-</span><br>
+                                    <strong>Tempo de processamento:</strong> <span id="processing-time">-</span><br>
+                                    <strong>Modelo LLM:</strong> <span id="model-name">-</span>
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Exemplos de Prompts -->
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h6 class="card-title mb-0">💡 Exemplos de Prompts</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <button class="btn btn-outline-secondary btn-sm w-100 mb-2" 
+                                        onclick="setPrompt('Quais são os padrões mais surpreendentes nesta feature?')">
+                                    🎯 Padrões Surpreendentes
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm w-100 mb-2"
+                                        onclick="setPrompt('Explique esta análise para um gestor educacional.')">
+                                    👨‍💼 Para Gestores
+                                </button>
+                            </div>
+                            <div class="col-md-6">
+                                <button class="btn btn-outline-secondary btn-sm w-100 mb-2"
+                                        onclick="setPrompt('Quais ações práticas podem ser tomadas baseadas nesta análise?')">
+                                    🚀 Ações Práticas
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm w-100 mb-2"
+                                        onclick="setPrompt('Identifique possíveis vieses ou limitações nesta análise.')">
+                                    🔍 Análise Crítica
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentFeatureIndex = null;
+
+        function setPrompt(text) {
+            document.getElementById('custom-prompt').value = text;
+        }
+
+        function describeFeature(featureIndex) {
+            currentFeatureIndex = featureIndex;
+            const customPrompt = document.getElementById('custom-prompt').value;
+            const language = document.getElementById('language-select').value;
+            const model = document.getElementById('model-select').value;
+            
+            showLoading();
+            
+            fetch('/api/describe_graph', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    feature_index: featureIndex,
+                    custom_prompt: customPrompt,
+                    language: language,
+                    model: model
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    displayResult(data.description, data.feature_name, model);
+                } else {
+                    displayError(data.error || 'Erro desconhecido');
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                displayError('Erro de conexão: ' + error.message);
+            });
+        }
+
+        function describeModel() {
+            const customPrompt = document.getElementById('custom-prompt').value;
+            const language = document.getElementById('language-select').value;
+            const model = document.getElementById('model-select').value;
+            
+            showLoading();
+            
+            fetch('/api/describe_model', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    custom_prompt: customPrompt,
+                    language: language,
+                    model: model
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    displayResult(data.description, 'Modelo Completo', model);
+                } else {
+                    displayError(data.error || 'Erro desconhecido');
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                displayError('Erro de conexão: ' + error.message);
+            });
+        }
+
+        function showLoading() {
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('result-area').style.display = 'none';
+            document.getElementById('result-info').style.display = 'none';
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('result-area').style.display = 'block';
+            document.getElementById('result-info').style.display = 'block';
+        }
+
+        function displayResult(text, featureName, model) {
+            const resultArea = document.getElementById('result-area');
+            const featureNameElement = document.getElementById('feature-name');
+            const processingTimeElement = document.getElementById('processing-time');
+            const modelElement = document.getElementById('model-name');
+            
+            resultArea.innerHTML = `<div class="p-3">${text}</div>`;
+            featureNameElement.textContent = featureName;
+            processingTimeElement.textContent = new Date().toLocaleTimeString();
+            modelElement.textContent = getModelDisplayName(model);
+            
+            // Scroll para o resultado
+            resultArea.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function getModelDisplayName(model) {
+            const modelNames = {
+                'deepseek-chat': 'DeepSeek Chat',
+                'gpt-3.5-turbo': 'OpenAI GPT-3.5 Turbo',
+                'gpt-4': 'OpenAI GPT-4'
+            };
+            return modelNames[model] || model;
+        }
+
+        function displayError(error) {
+            const resultArea = document.getElementById('result-area');
+            resultArea.innerHTML = `
+                <div class="alert alert-danger">
+                    <strong>Erro:</strong> ${error}
+                </div>
+            `;
+            document.getElementById('result-info').style.display = 'none';
+        }
+
+        function copyToClipboard(event) {
+            const resultText = document.getElementById('result-area').innerText;
+            navigator.clipboard.writeText(resultText).then(() => {
+                // Feedback visual
+                const button = event.target;
+                const originalText = button.innerHTML;
+                button.innerHTML = '✅ Copiado!';
+                setTimeout(() => {
+                    button.innerHTML = originalText;
+                }, 2000);
+            });
+        }
+
+        // Inicialização
+        document.addEventListener('DOMContentLoaded', function() {
+            // Verificar status da API
+            fetch('/api/health')
+                .then(response => response.json())
+                .then(data => {
+                    if (!data.model_loaded) {
+                        document.getElementById('status-indicator').innerHTML = 
+                            '<span class="badge bg-danger">Modelo Não Carregado</span>';
+                    }
+                });
+        });
+    </script>
+</body>
