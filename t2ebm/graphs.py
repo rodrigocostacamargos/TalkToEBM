@@ -15,6 +15,7 @@ from interpret.glassbox import (
 )
 
 from t2ebm.utils import num_tokens_from_string_
+from t2ebm.cache import get_graph_cache
 
 ###################################################################################################
 # Put individual graphs to text
@@ -199,6 +200,9 @@ def graph_to_text(
     confidence_bounds=True,
     confidence_level=0.95,
     max_tokens=3000,
+    ebm=None,
+    feature_index=None,
+    use_cache=True,
 ):
     """Convert an EBMGraph to text. This is the text that we then pass to the LLM.
 
@@ -213,6 +217,9 @@ def graph_to_text(
         confidence_bounds (bool, optional): Whether to inlcude confidence bounds. Defaults to True.
         confidence_level (float, optional): The desired confidence level of the bounds. Defaults to 0.95.
         max_tokens (int, optional): The maximum number of tokens that the textual description of the graph can have. The function simplifies the graph so to fit into this token limit. Defaults to 3000.
+        ebm: The EBM model (optional, required for caching).
+        feature_index (int, optional): The index of the feature in the EBM (required for caching).
+        use_cache (bool, optional): Whether to use cache for this conversion. Defaults to True.
 
     Raises:
         Exception: If an error occurs.
@@ -220,6 +227,23 @@ def graph_to_text(
     Returns:
         str: The textual representation of the graph.
     """
+    # Try to use cache if available
+    if use_cache and ebm is not None and feature_index is not None:
+        cache = get_graph_cache()
+        cache_kwargs = {
+            'include_description': include_description,
+            'feature_format': feature_format,
+            'x_axis_precision': x_axis_precision,
+            'y_axis_precision': y_axis_precision,
+            'confidence_bounds': confidence_bounds,
+            'confidence_level': confidence_level,
+            'max_tokens': max_tokens,
+        }
+        
+        cached_text = cache.get_cached_graph_text(ebm, feature_index, **cache_kwargs)
+        if cached_text is not None:
+            print(f"INFO: Using cached graph text for feature {graph.feature_name}")
+            return cached_text
     # a simple auto-detect for boolean feautres
     try:
         if (
@@ -350,6 +374,22 @@ def graph_to_text(
                         f"INFO: The graph of feature {graph.feature_name} was"
                         f" simplified by {min_variation_per_cent * 100:.1f}%."
                     )
+                
+                # Save to cache if enabled
+                if use_cache and ebm is not None and feature_index is not None:
+                    cache = get_graph_cache()
+                    cache_kwargs = {
+                        'include_description': include_description,
+                        'feature_format': feature_format,
+                        'x_axis_precision': x_axis_precision,
+                        'y_axis_precision': y_axis_precision,
+                        'confidence_bounds': confidence_bounds,
+                        'confidence_level': confidence_level,
+                        'max_tokens': max_tokens,
+                    }
+                    cache.set_cached_graph_text(ebm, feature_index, prompt, **cache_kwargs)
+                    print(f"INFO: Cached graph text for feature {graph.feature_name}")
+                
                 return prompt
         else:
             if total_tokens > max_tokens:

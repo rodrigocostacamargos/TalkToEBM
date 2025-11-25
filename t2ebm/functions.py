@@ -78,7 +78,8 @@ def describe_graph(
     # convert the graph to text
     to_text_kwargs = list(inspect.signature(graph_to_text).parameters)
     to_text_dict = {k: kwargs[k] for k in dict(kwargs) if k in to_text_kwargs}
-    graph = graph_to_text(graph, **to_text_dict)
+    # Pass ebm and feature_index for caching
+    graph = graph_to_text(graph, ebm=ebm, feature_index=feature_index, **to_text_dict)
 
     # get a cot sequence of messages to describe the graph
     llm_descripe_kwargs = list(inspect.signature(prompts.describe_graph_cot).parameters)
@@ -147,7 +148,11 @@ def describe_ebm(
     # convert the graphs to text
     to_text_kwargs = list(inspect.signature(graph_to_text).parameters)
     to_text_dict = {k: kwargs[k] for k in dict(kwargs) if k in to_text_kwargs}
-    graphs = [graph_to_text(graph, **to_text_dict) for graph in graphs]
+    # Pass ebm and feature_index for caching
+    graphs = [
+        graph_to_text(graph, ebm=ebm, feature_index=feature_index, **to_text_dict) 
+        for graph, feature_index in zip(graphs, top_feature_indices)
+    ]
 
     # get a cot sequence of messages to describe the graph
     llm_descripe_kwargs = list(inspect.signature(prompts.describe_graph_cot).parameters)
