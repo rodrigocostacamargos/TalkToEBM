@@ -97,10 +97,9 @@
                         <div class="mb-3">
                             <label for="model-select" class="form-label">Modelo LLM:</label>
                             <select class="form-select" id="model-select">
-                                <option value="deepseek-chat">DeepSeek Chat</option>
-                                <option value="gpt-3.5-turbo">OpenAI GPT-3.5 Turbo</option>
-                                <option value="gpt-4">OpenAI GPT-4</option>
+                                <option value="loading">Carregando modelos...</option>
                             </select>
+                            <small id="model-status" class="text-muted"></small>
                         </div>
                         <div class="mb-3">
                             <label for="language-select" class="form-label">Idioma:</label>
@@ -259,6 +258,19 @@
                                     <iframe id="visualization-frame" style="width: 100%; height: 600px; border: none;"></iframe>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+
+                    <!-- Cache -->
+                    <div class="card mt-3">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h6 class="card-title mb-0">🧹 Cache</h6>
+                            <button id="clear-cache-btn" class="btn btn-sm btn-outline-danger" onclick="clearCaches()">
+                                Limpar caches
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            <small id="cache-status" class="text-muted">Limpa respostas LLM e gráficos armazenados.</small>
                         </div>
                     </div>
                 </div>
@@ -454,6 +466,116 @@
             document.getElementById('feature-description').textContent = description || 'Selecione uma feature';
         }
 
+        // Carregar modelos disponíveis do servidor
+        function loadAvailableModels() {
+            const modelSelect = document.getElementById('model-select');
+            const modelStatus = document.getElementById('model-status');
+            
+            fetch('/api/models')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        modelSelect.innerHTML = '<option value="deepseek-chat">DeepSeek Chat (fallback)</option>';
+                        modelStatus.innerHTML = '<span class="text-danger">Erro ao carregar modelos</span>';
+                        return;
+                    }
+                    
+                    // Limpar opções existentes
+                    modelSelect.innerHTML = '';
+                    
+                    // Agrupar modelos por provedor
+                    const providers = {
+                        'openai': { name: 'OpenAI', models: [] },
+                        'anthropic': { name: 'Anthropic Claude', models: [] },
+                        'deepseek': { name: 'DeepSeek', models: [] }
+                    };
+                    
+                    // Organizar modelos por provedor
+                    for (const [modelId, info] of Object.entries(data.models)) {
+                        if (providers[info.provider]) {
+                            providers[info.provider].models.push({
+                                id: modelId,
+                                ...info
+                            });
+                        }
+                    }
+                    
+                    // Adicionar grupos de opções
+                    let hasAvailableModel = false;
+                    for (const [providerId, provider] of Object.entries(providers)) {
+                        if (provider.models.length > 0) {
+                            const optgroup = document.createElement('optgroup');
+                            optgroup.label = provider.name + (data.api_status[providerId] ? ' ✓' : ' ✗');
+                            
+                            provider.models.forEach(model => {
+                                const option = document.createElement('option');
+                                option.value = model.id;
+                                option.textContent = model.display_name;
+                                option.disabled = !model.available;
+                                
+                                if (!model.available) {
+                                    option.textContent += ' (API não configurada)';
+                                } else {
+                                    hasAvailableModel = true;
+                                }
+                                
+                                optgroup.appendChild(option);
+                            });
+                            
+                            modelSelect.appendChild(optgroup);
+                        }
+                    }
+                    
+                    // Selecionar o melhor modelo disponível por padrão
+                    const preferredModels = ['gpt-5.1', 'claude-opus-4-20250514', 'deepseek-chat', 'deepseek-coder'];
+                    for (const preferred of preferredModels) {
+                        const option = modelSelect.querySelector(`option[value="${preferred}"]:not([disabled])`);
+                        if (option) {
+                            option.selected = true;
+                            break;
+                        }
+                    }
+                    
+                    // Atualizar status
+                    const configuredApis = Object.entries(data.api_status)
+                        .filter(([k, v]) => v)
+                        .map(([k, v]) => k.charAt(0).toUpperCase() + k.slice(1));
+                    
+                    if (configuredApis.length > 0) {
+                        modelStatus.innerHTML = `<span class="text-success">APIs configuradas: ${configuredApis.join(', ')}</span>`;
+                    } else {
+                        modelStatus.innerHTML = '<span class="text-warning">Nenhuma API configurada. Configure as variáveis de ambiente.</span>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Erro ao carregar modelos:', error);
+                    modelSelect.innerHTML = '<option value="deepseek-chat">DeepSeek Chat (fallback)</option>';
+                    modelStatus.innerHTML = '<span class="text-danger">Erro de conexão</span>';
+                });
+        }
+
+        async function clearCaches() {
+            const btn = document.getElementById('clear-cache-btn');
+            const status = document.getElementById('cache-status');
+            btn.disabled = true;
+            const original = status.textContent;
+            status.textContent = 'Limpando caches...';
+            try {
+                const resp = await fetch('/api/cache/clear', { method: 'POST' });
+                const data = await resp.json();
+                if (data.success) {
+                    status.textContent = 'Caches limpos com sucesso.';
+                    setTimeout(() => { status.textContent = original; }, 3000);
+                } else {
+                    status.textContent = data.error || 'Falha ao limpar caches.';
+                }
+            } catch (err) {
+                status.textContent = 'Erro ao limpar caches.';
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
         // Inicialização
         document.addEventListener('DOMContentLoaded', function() {
             // Inicializar tooltips do Bootstrap
@@ -462,6 +584,9 @@
                 return new bootstrap.Tooltip(tooltipTriggerEl);
             });
 
+            // Carregar modelos disponíveis
+            loadAvailableModels();
+
             // Verificar status da API
             fetch('/api/health')
                 .then(response => response.json())
@@ -469,6 +594,19 @@
                     if (!data.model_loaded) {
                         document.getElementById('status-indicator').innerHTML = 
                             '<span class="badge bg-danger">Modelo Não Carregado</span>';
+                    }
+                    
+                    // Mostrar status das APIs no indicador
+                    if (data.api_keys_configured) {
+                        const apis = data.api_keys_configured;
+                        let apiStatus = '';
+                        if (apis.openai) apiStatus += ' <span class="badge bg-success">OpenAI</span>';
+                        if (apis.anthropic) apiStatus += ' <span class="badge bg-success">Claude</span>';
+                        if (apis.deepseek) apiStatus += ' <span class="badge bg-success">DeepSeek</span>';
+                        
+                        if (apiStatus) {
+                            document.getElementById('status-indicator').innerHTML += apiStatus;
+                        }
                     }
                 });
         });

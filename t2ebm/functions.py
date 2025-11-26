@@ -3,7 +3,7 @@ TalkToEBM: A Natural Language Interface to Explainable Boosting Machines.
 """
 
 import inspect
-
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Union
 
 import t2ebm
@@ -169,17 +169,46 @@ def describe_ebm(
         for graph in graphs
     ]
 
-    # execute the prompts with progress indication
-    graph_descriptions = []
-    for i, msg in enumerate(messages):
-        print(f"Processing feature {i+1}/{len(messages)}: {ebm.feature_names_in_[top_feature_indices[i]]}")
-        graph_descriptions.append(t2ebm.llm.chat_completion(llm, msg)[-1]["content"])
+    # Helper function for parallel processing
+    def process_feature(args):
+        """Process a single feature description."""
+        idx, msg, feature_name = args
+        print(f"Processing feature: {feature_name}")
+        result = t2ebm.llm.chat_completion(llm, msg)[-1]["content"]
+        return idx, result
+
+    # Execute the prompts in parallel for better performance
+    print(f"Processing {len(messages)} features in parallel...")
+    graph_descriptions_dict = {}
+    
+    # Use ThreadPoolExecutor for parallel API calls
+    # max_workers=3 to avoid rate limiting while still gaining speedup
+    max_workers = min(3, len(messages))
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Prepare arguments for parallel processing
+        tasks = [
+            (i, msg, ebm.feature_names_in_[top_feature_indices[i]])
+            for i, msg in enumerate(messages)
+        ]
+        
+        # Submit all tasks
+        futures = {executor.submit(process_feature, task): task[0] for task in tasks}
+        
+        # Collect results as they complete
+        for future in as_completed(futures):
+            idx, result = future.result()
+            graph_descriptions_dict[idx] = result
+            print(f"Completed feature {idx + 1}/{len(messages)}")
+    
+    # Reconstruct ordered list from dict
+    graph_descriptions_list = [graph_descriptions_dict[i] for i in range(len(messages))]
 
     # combine the graph descriptions in a single string
     graph_descriptions = "\n\n".join(
         [
             ebm.feature_names_in_[top_feature_indices[idx]] + ": " + graph_description
-            for idx, graph_description in enumerate(graph_descriptions)
+            for idx, graph_description in enumerate(graph_descriptions_list)
         ]
     )
 

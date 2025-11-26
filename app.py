@@ -19,9 +19,12 @@ try:
     import t2ebm.graphs as graphs
     import textwrap
     
-    # Monkey patch para substituir a função chat_completion do t2ebm.llm
-    from deepseek_llm import chat_completion as deepseek_chat_completion
-    t2ebm.llm.chat_completion = deepseek_chat_completion
+    # Importar novo módulo de configuração de LLM
+    import llm_config
+    
+    # Monkey patch para usar o novo sistema multi-provedor
+    t2ebm.llm.chat_completion = llm_config.chat_completion
+    t2ebm.llm.setup = llm_config.setup
     
     MODEL_LOADED = True
 except ImportError as e:
@@ -249,13 +252,65 @@ def visualize_local(sample_index):
         import traceback
         return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
 
+@app.route('/api/models')
+def get_available_models():
+    """API para listar modelos LLM disponíveis"""
+    try:
+        models = llm_config.get_available_models()
+        api_status = llm_config.check_api_keys()
+        return jsonify({
+            'models': models,
+            'api_status': api_status
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/cache/stats')
+def get_cache_stats():
+    """API para obter estatísticas de cache"""
+    try:
+        from t2ebm.cache import get_llm_cache, get_graph_cache
+        
+        llm_cache = get_llm_cache()
+        graph_cache = get_graph_cache()
+        
+        return jsonify({
+            'llm_cache': llm_cache.get_cache_stats(),
+            'graph_cache': {
+                'directory': graph_cache.cache_dir,
+                'exists': os.path.exists(graph_cache.cache_dir)
+            }
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/cache/clear', methods=['POST'])
+def clear_cache():
+    """API para limpar o cache"""
+    try:
+        from t2ebm.cache import clear_all_caches
+        clear_all_caches()
+        return jsonify({
+            'success': True,
+            'message': 'Cache limpo com sucesso'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/health')
 def health_check():
     """Endpoint de health check"""
+    api_status = {}
+    try:
+        api_status = llm_config.check_api_keys()
+    except:
+        pass
+    
     return jsonify({
         'status': 'healthy',
         'model_loaded': MODEL_LOADED,
-        'features_count': len(feature_names) if MODEL_LOADED else 0
+        'features_count': len(feature_names) if MODEL_LOADED else 0,
+        'api_keys_configured': api_status
     })
 
 if __name__ == '__main__':
