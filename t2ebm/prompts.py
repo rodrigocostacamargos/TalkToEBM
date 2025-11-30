@@ -100,6 +100,7 @@ def summarize_ebm(
     graph_descriptions: str,
     expert_description="an expert statistician and data scientist",
     dataset_description="",
+    task_description="",
     num_sentences: int = None,
     language: str = None,
 ):
@@ -127,6 +128,8 @@ def summarize_ebm(
     user_msg += f"Here are the descriptions of the different graphs.\n\n{graph_descriptions}\n\n"
     if dataset_description is not None and len(dataset_description) > 0:
         user_msg += f"Here is a description of the dataset that the model was trained on.\n\n{dataset_description}\n\n"
+    if task_description is not None and len(task_description) > 0:
+        user_msg += f"Additional instruction from the user: {task_description}\n\n"
     user_msg += """Now, please provide a summary of the model.
     
     The summary should contain the most important features in the model and their effect on the outcome. Unimportant effects and features can be ignored. 

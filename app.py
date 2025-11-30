@@ -61,39 +61,16 @@ def describe_graph():
     model = data.get('model', 'deepseek-chat')
     
     try:
-        # Usar prompt customizado se fornecido
-        if custom_prompt:
-            graph = graphs.extract_graph(ebm, feature_index)
-            graph_as_text = graphs.graph_to_text(graph, max_tokens=1000)
-            
-            # Construir prompt personalizado
-            prompt = t2ebm.prompts.describe_graph(
-                graph_as_text,
-                graph_description=y_axis_description,
-                dataset_description=dataset_description,
-                task_description=custom_prompt,
-                language=language
-            )
-            
-            # Usar o modelo selecionado para análise
-            description = t2ebm.describe_graph(
-                model, 
-                ebm, 
-                feature_index,
-                graph_description=y_axis_description,
-                dataset_description=dataset_description,
-                language=language
-            )
-        else:
-            # Usar o modelo selecionado para análise
-            description = t2ebm.describe_graph(
-                model, 
-                ebm, 
-                feature_index,
-                graph_description=y_axis_description,
-                dataset_description=dataset_description,
-                language=language
-            )
+        # Usar o modelo selecionado para análise (com prompt customizado se fornecido)
+        description = t2ebm.describe_graph(
+            model, 
+            ebm, 
+            feature_index,
+            graph_description=y_axis_description,
+            dataset_description=dataset_description,
+            task_description=custom_prompt,
+            language=language
+        )
         
         return jsonify({
             'success': True,
@@ -122,6 +99,7 @@ def describe_model():
             ebm,
             dataset_description=dataset_description,
             outcome_description=y_axis_description,
+            task_description=custom_prompt,
             language=language
         )
         
